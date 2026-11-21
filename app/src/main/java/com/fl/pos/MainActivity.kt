@@ -95,7 +95,7 @@ fun OrderScreen(repo: PosRepo, printer: BtPrinter) {
     var askTable by remember { mutableStateOf(false) }
     var askPay by remember { mutableStateOf(false) }
     var tableInput by remember { mutableStateOf("") }
-    val total = items.sumOf { it.priceCents * it.qty }
+    val total = items.fold(0) { acc, i -> acc + i.priceCents * i.qty }
 
     Column(Modifier.fillMaxSize().padding(10.dp)) {
 

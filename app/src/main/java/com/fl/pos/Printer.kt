@@ -18,8 +18,14 @@ object Esc {
     fun cut() = byteArrayOf(0x1D, 0x56, 0x42, 0x00)
     fun line(n: Int = 32) = text("-".repeat(n) + "\n")
 
-    /** 显示宽度：中文算 2 个字符位 */
-    fun dw(s: String) = s.sumOf { if (it.code > 127) 2 else 1 }
+    /** 显示宽度：中文算 2 个字符位。
+     *  不用 sumOf{...}：它有 Int/Long/Double/UInt/ULong 五个重载，
+     *  lambda 体是 if 表达式时编译器推不出类型，会报 Overload resolution ambiguity。 */
+    fun dw(s: String): Int {
+        var n = 0
+        for (c in s) n += if (c.code > 127) 2 else 1
+        return n
+    }
 
     fun padRight(s: String, w: Int) = s + " ".repeat((w - dw(s)).coerceAtLeast(0))
     fun padLeft(s: String, w: Int) = " ".repeat((w - dw(s)).coerceAtLeast(0)) + s
@@ -64,13 +70,16 @@ class BtPrinter {
 
     fun isConnected() = socket?.isConnected == true
 
-    fun write(vararg chunks: ByteArray): Boolean = try {
-        val out = socket?.outputStream ?: return false
-        chunks.forEach { out.write(it) }
-        out.flush()
-        true
-    } catch (e: Exception) {
-        false
+    // 必须是块体函数：表达式体 (= try {...}) 里不允许 return
+    fun write(vararg chunks: ByteArray): Boolean {
+        return try {
+            val out = socket?.outputStream ?: return false
+            chunks.forEach { out.write(it) }
+            out.flush()
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun close() {
@@ -95,7 +104,7 @@ class BtPrinter {
             sb.append(Esc.row(it.dishName, "x${it.qty}", m(it.priceCents * it.qty)))
         }
         sb.append(Esc.line())
-        val total = items.sumOf { it.priceCents * it.qty }
+        val total = items.fold(0) { acc, i -> acc + i.priceCents * i.qty }
         sb.append(Esc.bold(true))
         sb.append(Esc.lr("合计", m(total), 32))
         sb.append(Esc.bold(false))

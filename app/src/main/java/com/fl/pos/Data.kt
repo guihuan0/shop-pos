@@ -149,7 +149,7 @@ class PosRepo(private val dao: PosDao) {
 
     /** 结账：标记已结 + 存合计/支付方式/时间，日后统计全靠这条 */
     suspend fun settle(ticket: Ticket, items: List<TicketItem>, payMethod: String): Int {
-        val total = items.sumOf { it.priceCents * it.qty }
+        val total = items.fold(0) { acc, i -> acc + i.priceCents * i.qty }
         dao.updateTicket(
             ticket.copy(
                 status = PAID,
