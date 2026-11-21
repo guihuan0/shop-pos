@@ -1,0 +1,3 @@
+https://github.com/adoptium/temurin17-binaries/releases/download/jdk-17.0.21.1%2B2/OpenJDK17U-jdk_x64_windows_hotspot_17.0.21.1_2.msi
+https://dl.google.com/android/repository/commandlinetools-win-11076708_latest.zip
+https://mirrors.cloud.tencent.com/gradle/gradle-8.7-bin.zip
