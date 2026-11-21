@@ -18,17 +18,47 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # 刻意不用 android-actions/setup-android@v3：
+      # 它内部执行 `sdkmanager tools`，而 Google 已把 `tools` 包从 SDK 仓库移除，
+      # 报 "Warning: Failed to find package 'tools'" 后 exit 1，整个 job 直接死。
+      # runner 本身已预装 SDK（/usr/local/lib/android/sdk），手动指一下就行。
+      - name: Locate Android SDK
+        run: |
+          SDK_ROOT=/usr/local/lib/android/sdk
+          if [ ! -d "$SDK_ROOT" ]; then SDK_ROOT="${ANDROID_HOME:-$HOME/android-sdk}"; fi
+          CMDLINE=$(ls -d "$SDK_ROOT"/cmdline-tools/*/ 2>/dev/null | head -1)
+          if [ -z "$CMDLINE" ]; then
+            echo "找不到 cmdline-tools，落盘全盘搜索："
+            find / -name sdkmanager -type f 2>/dev/null | head -5
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "CMDLINE=$CMDLINE" >> "$GITHUB_ENV"
+          echo "$CMDLINE/bin" >> "$GITHUB_PATH"
+          echo "SDK_ROOT = $SDK_ROOT"
+          echo "CMDLINE  = $CMDLINE"
+          echo "--- sdk 根目录 ---"
+          ls "$SDK_ROOT"
+          echo "--- 已装 platforms ---"
+          ls "$SDK_ROOT/platforms" 2>/dev/null || echo "(空)"
+          echo "--- 已装 build-tools ---"
+          ls "$SDK_ROOT/build-tools" 2>/dev/null || echo "(空)"
 
-      - name: Install SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+      - name: Accept licenses and install SDK packages
+        run: |
+          yes 2>/dev/null | "$CMDLINE/bin/sdkmanager" --sdk_root="$ANDROID_HOME" --licenses > /dev/null 2>&1 || true
+          "$CMDLINE/bin/sdkmanager" --sdk_root="$ANDROID_HOME" \
+            "platforms;android-34" "build-tools;34.0.0" "platform-tools"
+          echo "--- 安装后 platforms ---"
+          ls "$ANDROID_HOME/platforms"
+          echo "--- 安装后 build-tools ---"
+          ls "$ANDROID_HOME/build-tools"
 
-      # 防御：万一 local.properties 被一起上传，它里面的 Windows 路径会覆盖 ANDROID_HOME
+      # 防御：万一 local.properties 被一起上传，里面的 Windows 路径会覆盖 ANDROID_HOME
       - name: Drop local.properties
         run: rm -f local.properties
 
-      # 不用 gradle wrapper：工程里没有 gradlew，直接装一个确定版本的 Gradle
       - name: Install Gradle 8.7
         run: |
           curl -sSLo /tmp/gradle.zip https://services.gradle.org/distributions/gradle-8.7-bin.zip
@@ -46,7 +76,6 @@ jobs:
         with:
           path: |
             ~/.gradle/caches
-            ~/.gradle/jdks
           key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle.kts', 'gradle.properties') }}
           restore-keys: |
             gradle-${{ runner.os }}-
