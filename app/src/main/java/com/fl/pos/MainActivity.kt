@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package com.fl.pos
 
 import android.content.pm.PackageManager
@@ -45,6 +47,7 @@ class MainActivity : ComponentActivity() {
 
         val repo = PosRepo(PosDb.get(this).dao())
         val printer = BtPrinter()
+        val tableStore = TableStore(this)
 
         setContent {
             MaterialTheme {
@@ -53,14 +56,14 @@ class MainActivity : ComponentActivity() {
                     NavigationBar {
                         NavigationBarItem(tab == 0, { tab = 0 }, {}, label = { Text("点单") })
                         NavigationBarItem(tab == 1, { tab = 1 }, {}, label = { Text("日报") })
-                        NavigationBarItem(tab == 2, { tab = 2 }, {}, label = { Text("菜品") })
+                        NavigationBarItem(tab == 2, { tab = 2 }, {}, label = { Text("设置") })
                     }
                 }) { pad ->
                     Box(Modifier.padding(pad)) {
                         when (tab) {
-                            0 -> OrderScreen(repo, printer)
+                            0 -> OrderScreen(repo, printer, tableStore)
                             1 -> DailyScreen(repo, printer)
-                            else -> DishScreen(repo)
+                            else -> SettingsScreen(repo, tableStore)
                         }
                     }
                 }
@@ -78,8 +81,9 @@ fun dayStart(): Long = Calendar.getInstance().apply {
 
 /* ==================== 点单页 ==================== */
 @Composable
-fun OrderScreen(repo: PosRepo, printer: BtPrinter) {
+fun OrderScreen(repo: PosRepo, printer: BtPrinter, tableStore: TableStore) {
     val scope = rememberCoroutineScope()
+    val tables by tableStore.tables.collectAsStateWithLifecycle()
     val openTickets by repo.openTicket()
         .collectAsStateWithLifecycle(initialValue = emptyList())
     val ticket: Ticket? = openTickets.firstOrNull()
@@ -193,17 +197,44 @@ fun OrderScreen(repo: PosRepo, printer: BtPrinter) {
         PrinterBar(printer) { msg = it }
     }
 
-    /* ---- 开台 ---- */
+    /* ---- 开台：点预设台号，或手输 ---- */
     if (askTable) {
         AlertDialog(
             onDismissRequest = { askTable = false },
-            title = { Text("开台") },
+            title = { Text("选择台号") },
             text = {
-                OutlinedTextField(
-                    tableInput, { tableInput = it },
-                    label = { Text("桌号 / 客人标识（可空）") },
-                    singleLine = true
-                )
+                Column {
+                    if (tables.isEmpty()) {
+                        Text(
+                            "还没有预设台号。去「设置」里添加，或在下面直接手输。",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            tables.forEach { name ->
+                                AssistChip(
+                                    onClick = {
+                                        scope.launch {
+                                            repo.openNew(name)
+                                            askTable = false
+                                            msg = "已开台 · $name"
+                                        }
+                                    },
+                                    label = { Text(name) }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(10.dp))
+                    }
+                    OutlinedTextField(
+                        tableInput, { tableInput = it },
+                        label = { Text("或手输台号（可空）") },
+                        singleLine = true
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
@@ -213,7 +244,7 @@ fun OrderScreen(repo: PosRepo, printer: BtPrinter) {
                         askTable = false
                         msg = "已开台"
                     }
-                }) { Text("确定") }
+                }) { Text("用手输的台号开台") }
             },
             dismissButton = { TextButton(onClick = { askTable = false }) { Text("取消") } }
         )
@@ -379,18 +410,71 @@ fun DailyScreen(repo: PosRepo, printer: BtPrinter) {
     }
 }
 
-/* ==================== 菜品页 ==================== */
+/* ==================== 设置页（台号 + 菜品） ==================== */
 @Composable
-fun DishScreen(repo: PosRepo) {
+fun SettingsScreen(repo: PosRepo, tableStore: TableStore) {
     val scope = rememberCoroutineScope()
     val dishes by repo.dishes().collectAsStateWithLifecycle(initialValue = emptyList())
+    val tables by tableStore.tables.collectAsStateWithLifecycle()
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var cat by remember { mutableStateOf("热菜") }
+    var newTable by remember { mutableStateOf("") }
     var msg by remember { mutableStateOf("") }
 
     Column(Modifier.fillMaxSize().padding(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+
+        /* ---------- 台号管理 ---------- */
+        Text("台号管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                newTable, { newTable = it },
+                label = { Text("台号，如 A1 / 大厅2") },
+                modifier = Modifier.weight(1f), singleLine = true
+            )
+            Button(onClick = {
+                if (newTable.isBlank()) { msg = "台号不能为空"; return@Button }
+                tableStore.add(newTable)
+                msg = "已添加台号 ${newTable.trim()}"
+                newTable = ""
+            }) { Text("添加") }
+        }
+
+        if (tables.isEmpty()) {
+            Text(
+                "还没有台号。加几个之后，开台时点一下就行，不用每次手输。",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        } else {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                tables.forEach { t ->
+                    InputChip(
+                        selected = false,
+                        onClick = {
+                            tableStore.remove(t)
+                            msg = "已删除台号 $t"
+                        },
+                        label = { Text("$t ×") }
+                    )
+                }
+            }
+            Text("点台号可删除", style = MaterialTheme.typography.bodySmall)
+        }
+
+        HorizontalDivider(Modifier.padding(vertical = 8.dp))
+
+        /* ---------- 菜品管理 ---------- */
+        Text("菜品管理", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Medium)
+        Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedTextField(name, { name = it }, label = { Text("菜名") },
                 modifier = Modifier.weight(1.5f), singleLine = true)
             OutlinedTextField(price, { price = it }, label = { Text("单价") },
@@ -410,7 +494,7 @@ fun DishScreen(repo: PosRepo) {
                     repo.createDish(name, p, cat.ifBlank { "热菜" })
                     name = ""
                     price = ""
-                    msg = "已添加"
+                    msg = "已添加菜品"
                 }
             },
             modifier = Modifier.padding(top = 6.dp)
@@ -418,7 +502,7 @@ fun DishScreen(repo: PosRepo) {
 
         if (msg.isNotBlank()) Text(msg, style = MaterialTheme.typography.bodySmall)
 
-        LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
+        LazyColumn(Modifier.weight(1f).padding(top = 6.dp)) {
             items(dishes, key = { it.id }) { d ->
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 6.dp),

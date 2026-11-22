@@ -166,3 +166,35 @@ class PosRepo(private val dao: PosDao) {
         dao.updateTicket(ticket.copy(status = PAID, totalCents = 0, payMethod = "作废",
             paidAt = System.currentTimeMillis()))
 }
+
+/**
+ * 预设台号。
+ *
+ * 刻意存在 SharedPreferences 而不是 Room：
+ * 加新表要把 DB 版本从 1 升到 2，就得写 Migration。迁移语句和 Room 期望的
+ * schema 只要差一个 AUTOINCREMENT 或 NOT NULL，运行期就抛
+ * "Migration didn't properly handle ticket" 并崩在已有订单数据上。
+ * 台号是配置数据、不是业务数据，用 SharedPreferences 零迁移风险。
+ */
+class TableStore(ctx: Context) {
+    private val sp = ctx.getSharedPreferences("tables", Context.MODE_PRIVATE)
+    private val _tables = kotlinx.coroutines.flow.MutableStateFlow(load())
+    val tables: kotlinx.coroutines.flow.StateFlow<List<String>> = _tables
+
+    private fun load(): List<String> =
+        (sp.getString("list", "") ?: "")
+            .split("\n").map { it.trim() }.filter { it.isNotEmpty() }
+
+    private fun persist(list: List<String>) {
+        sp.edit().putString("list", list.joinToString("\n")).apply()
+        _tables.value = list
+    }
+
+    fun add(name: String) {
+        val n = name.trim()
+        if (n.isEmpty() || n in _tables.value) return
+        persist(_tables.value + n)
+    }
+
+    fun remove(name: String) = persist(_tables.value - name)
+}
