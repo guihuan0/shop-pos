@@ -83,6 +83,17 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon --stacktrace
 
+      # 把实际签名证书打到日志里，方便确认每次构建签名是否一致
+      # （APK 只有 v2/v3 签名，META-INF 里没有 CERT.RSA，keytool -jarfile 读不出来）
+      - name: Show keystore certificate
+        run: |
+          keytool -list -v -keystore app/debug.keystore -storepass android -alias androiddebugkey | grep -E "SHA256|SHA-256"
+
+      - name: Verify APK signing certificate
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK"
+
       - name: List output
         run: ls -lh app/build/outputs/apk/debug/
 

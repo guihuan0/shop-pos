@@ -19,9 +19,12 @@ android {
     // 固定签名：仓库内带 app/debug.keystore，保证每次 CI 构建签名一致。
     // 否则 GitHub runner 每次随机生成 ~/.android/debug.keystore，
     // 导致新 APK 与旧版签名不匹配，老板更新时必须卸载重装 —— 订单数据全丢。
-    // 覆盖 AGP 默认的 debug signingConfig 即可，debug 构建自动使用它。
+    //
+    // 注意：不能只覆盖 getByName("debug")，AGP 8 里那个默认配置是懒创建的，
+    // 覆盖它不一定能落到 buildType 上。这里新建一个独立配置 "fixed"，
+    // 再由 buildTypes.debug 显式指向它，行为确定。
     signingConfigs {
-        getByName("debug") {
+        create("fixed") {
             storeFile = file("debug.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
@@ -30,10 +33,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
             isMinifyEnabled = false
-            // 没有 release keystore，暂时复用 debug 签名，保证能覆盖安装
-            signingConfig = signingConfigs.getByName("debug")
+            // 没有 release keystore，复用固定的 debug 签名，保证能覆盖安装
+            signingConfig = signingConfigs.getByName("fixed")
         }
     }
 
