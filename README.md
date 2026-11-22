@@ -19,8 +19,9 @@
 - 今日已结单列表，点任意一行重打那张小票
 - 一键打印"营业日报"纸单，给老板对账
 
-**菜品页**
-- 增删菜品：菜名、单价、分类
+**设置页**
+- **台号管理**：预设台号（A1 / A2 / 大厅1 …），开台时点一下就行，不用每次手输；点台号可删除
+- 菜品管理：增删菜品（菜名、单价、分类）
 
 ## 出 APK 的两条路
 
@@ -55,6 +56,23 @@
 gradle wrapper --gradle-version 8.7
 ./gradlew assembleDebug
 ```
+
+## 更新 APK（不会丢数据）
+
+仓库里固定了 `app/debug.keystore`，所以每次 GitHub 构建出的 APK **签名一致**，可以直接覆盖安装：
+
+```bash
+adb install -r app-debug.apk
+```
+
+或者把新 APK 传到手机点安装——系统会提示「更新」而不是「安装」。
+
+**不要先卸载**。卸载会清空 Room 数据库（全部订单）和 SharedPreferences（预设台号），归零。
+
+> 这个坑踩过：不加固定 keystore 的话，GitHub runner 每次构建都会随机生成 `~/.android/debug.keystore`，
+> 新 APK 签名和旧版不匹配，`INSTALL_FAILED_UPDATE_INCOMPATIBLE`，只能卸载重装 —— 店里的历史数据全没了。
+> 已通过 `signingConfigs.create("fixed")` + `buildTypes.debug.signingConfig` 显式指定修掉，
+> CI 日志里会打印 keystore 和 APK 的实际 SHA-256 供核对。
 
 ## 硬件
 
